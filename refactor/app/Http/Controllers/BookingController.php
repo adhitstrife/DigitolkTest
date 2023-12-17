@@ -35,17 +35,23 @@ class BookingController extends Controller
      */
     public function index(Request $request)
     {
-        if($user_id = $request->get('user_id')) {
+        $user = $request->__authenticatedUser;
 
-            $response = $this->repository->getUsersJobs($user_id);
-
-        }
-        elseif($request->__authenticatedUser->user_type == env('ADMIN_ROLE_ID') || $request->__authenticatedUser->user_type == env('SUPERADMIN_ROLE_ID'))
-        {
+        if ($this->isAdminOrSuperadmin($user)) {
             $response = $this->repository->getAll($request);
+        } elseif ($user_id = $request->get('user_id')) {
+            $response = $this->repository->getUsersJobs($user_id);
         }
 
         return response($response);
+    }
+
+    private function isAdminOrSuperadmin($user)
+    {
+        $adminRoleId = config('roles.admin');
+        $superadminRoleId = config('roles.superadmin');
+
+        return $user->user_type == $adminRoleId || $user->user_type == $superadminRoleId;
     }
 
     /**
@@ -196,16 +202,32 @@ class BookingController extends Controller
     {
         $data = $request->all();
 
+        if ($data['flagged'] == 'true') {
+            if (empty($data['admincomment'])) {
+                return response("Please, add comment");
+            }
+            $flagged = 'yes';
+        } else {
+            $flagged = 'no';
+        }
+
+        $manuallyHandled = $data['manually_handled'] == 'true' ? 'yes' : 'no';
+        $byAdmin = $data['by_admin'] == 'true' ? 'yes' : 'no';
+
+        $admincomment = $data['admincomment'] ?? '';
+
         if (isset($data['distance']) && $data['distance'] != "") {
             $distance = $data['distance'];
         } else {
             $distance = "";
         }
+
         if (isset($data['time']) && $data['time'] != "") {
             $time = $data['time'];
         } else {
             $time = "";
         }
+
         if (isset($data['jobid']) && $data['jobid'] != "") {
             $jobid = $data['jobid'];
         }
@@ -216,39 +238,18 @@ class BookingController extends Controller
             $session = "";
         }
 
-        if ($data['flagged'] == 'true') {
-            if($data['admincomment'] == '') return "Please, add comment";
-            $flagged = 'yes';
-        } else {
-            $flagged = 'no';
-        }
-        
-        if ($data['manually_handled'] == 'true') {
-            $manually_handled = 'yes';
-        } else {
-            $manually_handled = 'no';
-        }
-
-        if ($data['by_admin'] == 'true') {
-            $by_admin = 'yes';
-        } else {
-            $by_admin = 'no';
-        }
-
-        if (isset($data['admincomment']) && $data['admincomment'] != "") {
-            $admincomment = $data['admincomment'];
-        } else {
-            $admincomment = "";
-        }
         if ($time || $distance) {
-
-            $affectedRows = Distance::where('job_id', '=', $jobid)->update(array('distance' => $distance, 'time' => $time));
+            Distance::where('job_id', '=', $jobid)->update(['distance' => $distance, 'time' => $time]);
         }
 
-        if ($admincomment || $session || $flagged || $manually_handled || $by_admin) {
-
-            $affectedRows1 = Job::where('id', '=', $jobid)->update(array('admin_comments' => $admincomment, 'flagged' => $flagged, 'session_time' => $session, 'manually_handled' => $manually_handled, 'by_admin' => $by_admin));
-
+        if ($admincomment || $session || $flagged || $manuallyHandled || $byAdmin) {
+            Job::where('id', '=', $jobid)->update([
+                'admin_comments' => $admincomment,
+                'flagged' => $flagged,
+                'session_time' => $session,
+                'manually_handled' => $manuallyHandled,
+                'by_admin' => $byAdmin
+            ]);
         }
 
         return response('Record updated!');
